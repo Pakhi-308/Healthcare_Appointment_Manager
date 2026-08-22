@@ -68,13 +68,15 @@ class GoogleCalendarService:
         Create a calendar event with Google Meet link.
         Falls back to generating a Meet link simulator if offline/mock.
         """
-        mock_meet = f"https://meet.google.com/sync-{uuid.uuid4().hex[:3]}-{uuid.uuid4().hex[:4]}"
-        mock_event_id = f"gcal_{uuid.uuid4().hex[:12]}"
+        # Zero-config live WebRTC room fallback (allows real video + audio consultation without Google OAuth)
+        unique_room_id = f"HealthSync-Consultation-{uuid.uuid4().hex[:8]}"
+        mock_meet = f"https://meet.jit.si/{unique_room_id}#config.prejoinConfig.enabled=false"
+        mock_event_id = f"telehealth_{uuid.uuid4().hex[:12]}"
 
         # Check if user has saved token
         token_record = db.query(GoogleToken).filter(GoogleToken.user_id == user_id).first()
         if not token_record or not self.is_configured():
-            logger.info(f"[Mock GCal] Created calendar event for {summary} at {start_time}")
+            logger.info(f"[Live Video Room] Created consultation room {mock_meet} for {summary} at {start_time}")
             return {
                 "event_id": mock_event_id,
                 "meet_link": mock_meet,
