@@ -22,3 +22,22 @@ services:
         value: llama-3.3-70b-versatile
       - key: FRONTEND_URL
         sync: false
+
+  # Frontend SPA Service on Render (Optional all-in-one blueprint)
+  - type: web
+    name: healthsync-frontend
+    env: static
+    region: oregon
+    plan: free
+    buildCommand: "cd frontend && npm install && npm run build"
+    staticPublishPath: "./frontend/dist"
+    routes:
+      - type: rewrite
+        source: "/*"
+        destination: "/index.html"
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: healthsync-backend
+          property: host
