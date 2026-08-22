@@ -1,18 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, AlertCircle, Clock } from 'lucide-react';
 
+const parseUtcDate = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return dateStr;
+  const str = String(dateStr);
+  const hasTimezone = /Z|[+-]\d{2}:?\d{2}$/.test(str);
+  return new Date(hasTimezone ? str : `${str}Z`);
+};
+
 export const SlotHoldTimer = ({ expiresAt, onExpired, totalSeconds = 600 }) => {
   const [timeLeft, setTimeLeft] = useState(() => {
     if (!expiresAt) return totalSeconds;
-    const diff = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
-    return diff;
+    const parsed = parseUtcDate(expiresAt);
+    if (!parsed || isNaN(parsed.getTime())) return totalSeconds;
+    const diff = Math.floor((parsed.getTime() - Date.now()) / 1000);
+    // If diff is negative (e.g. clock skew between client/server), default safely to 600s
+    return diff > 0 ? diff : totalSeconds;
   });
 
   useEffect(() => {
-    if (timeLeft <= 0) {
-      if (onExpired) onExpired();
-      return;
-    }
+    if (timeLeft <= 0) return;
 
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
