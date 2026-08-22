@@ -15,6 +15,7 @@ from app.services.booking_service import booking_service
 router = APIRouter()
 
 
+@router.get("", response_model=List[DoctorOut])
 @router.get("/", response_model=List[DoctorOut])
 def get_doctors(
     specialization: Optional[str] = None,

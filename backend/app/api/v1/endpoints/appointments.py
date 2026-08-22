@@ -22,6 +22,7 @@ from app.services.calendar_service import calendar_service
 router = APIRouter()
 
 
+@router.post("", response_model=AppointmentOut)
 @router.post("/", response_model=AppointmentOut)
 def book_appointment(
     req: AppointmentCreate,
