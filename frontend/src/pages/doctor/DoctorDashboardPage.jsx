@@ -180,9 +180,22 @@ export const DoctorDashboardPage = ({ onStartConsultation }) => {
                     </div>
                   </div>
 
+                  {/* Patient Symptoms Intake */}
+                  {symptoms?.raw_symptoms && (
+                    <div className="p-3.5 rounded-xl bg-[#0c0418] border border-cyan-950/80 text-xs space-y-1">
+                      <span className="text-cyan-300 font-bold flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                        Patient Symptoms &amp; Intake:
+                      </span>
+                      <p className="text-slate-200 line-clamp-3 leading-relaxed">
+                        "{symptoms.raw_symptoms}"
+                      </p>
+                    </div>
+                  )}
+
                   {/* AI Triage Highlight */}
                   {summary?.ai_chief_complaint && (
-                    <div className="p-3 rounded-xl bg-[#0c0418] border border-purple-900/60 text-xs">
+                    <div className="p-3 rounded-xl bg-[#080212] border border-purple-900/60 text-xs">
                       <span className="text-purple-400 font-semibold flex items-center gap-1.5 mb-0.5">
                         <Bot className="w-3.5 h-3.5" />
                         AI Triage Summary:
@@ -192,9 +205,11 @@ export const DoctorDashboardPage = ({ onStartConsultation }) => {
                   )}
 
                   {symptoms && (
-                    <div className="text-xs text-slate-400 flex items-center gap-4">
+                    <div className="text-xs text-slate-400 flex flex-wrap items-center gap-4 pt-1">
+                      <span className="px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/40 text-purple-300">
+                        <strong>Severity:</strong> {symptoms.severity_scale}/10
+                      </span>
                       <span><strong>Duration:</strong> {symptoms.duration_days} days</span>
-                      <span><strong>Pain/Severity:</strong> {symptoms.severity_scale}/10</span>
                       {patient.phone && <span><strong>Phone:</strong> {patient.phone}</span>}
                     </div>
                   )}

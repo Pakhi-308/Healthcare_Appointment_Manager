@@ -15,7 +15,9 @@ import {
   HelpCircle, 
   AlertCircle, 
   Calendar,
-  Clock
+  Clock,
+  Activity,
+  Video
 } from 'lucide-react';
 
 export const ConsultationPage = ({ appointment, onBack, onComplete }) => {
@@ -120,27 +122,80 @@ export const ConsultationPage = ({ appointment, onBack, onComplete }) => {
         </Badge>
       </div>
 
-      {/* Patient Header Card */}
-      <div className="glass-panel p-6 rounded-2xl border border-cyan-500/30 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div>
-          <span className="text-xs text-slate-400 font-semibold block">Patient Name</span>
-          <h2 className="text-lg font-bold text-white mt-0.5">{patient.full_name || 'Patient'}</h2>
-          <span className="text-xs text-slate-400">{patient.email}</span>
-        </div>
-        <div>
-          <span className="text-xs text-slate-400 font-semibold block">Appointment Slot</span>
-          <div className="text-sm font-semibold text-cyan-300 mt-0.5">
-            {new Date(appointment.slot_start).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+      {/* Patient Header Card with Live Video Call Button */}
+      <div className="glass-panel p-6 rounded-2xl border border-cyan-500/30 flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 flex-1">
+          <div>
+            <span className="text-xs text-slate-400 font-semibold block">Patient Name</span>
+            <h2 className="text-lg font-bold text-white mt-0.5">{patient.full_name || 'Patient'}</h2>
+            <span className="text-xs text-slate-400">{patient.email} {patient.phone ? `• ${patient.phone}` : ''}</span>
           </div>
-          <span className="text-xs text-slate-400">Duration: 30 mins</span>
-        </div>
-        <div>
-          <span className="text-xs text-slate-400 font-semibold block">Intake Severity</span>
-          <div className="text-sm font-bold text-white mt-0.5">
-            {symptoms?.severity_scale || 5}/10 Severity • {symptoms?.duration_days || 1} days duration
+          <div>
+            <span className="text-xs text-slate-400 font-semibold block">Appointment Slot</span>
+            <div className="text-sm font-semibold text-cyan-300 mt-0.5">
+              {new Date(appointment.slot_start).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+            </div>
+            <span className="text-xs text-slate-400">Duration: 30 mins • Status: <span className="text-cyan-400 uppercase font-bold">{appointment.status}</span></span>
           </div>
-          <span className="text-xs text-slate-400">Notes: {symptoms?.additional_notes || 'None'}</span>
+          <div>
+            <span className="text-xs text-slate-400 font-semibold block">Intake Severity</span>
+            <div className="text-sm font-bold text-white mt-0.5">
+              <span className={`inline-block px-2 py-0.5 rounded text-xs mr-2 font-bold ${
+                (symptoms?.severity_scale || 5) >= 8 ? 'bg-rose-950 text-rose-300 border border-rose-600' :
+                (symptoms?.severity_scale || 5) >= 5 ? 'bg-amber-950 text-amber-300 border border-amber-600' :
+                'bg-emerald-950 text-emerald-300 border border-emerald-600'
+              }`}>
+                {symptoms?.severity_scale || 5}/10 Severity
+              </span>
+              <span>{symptoms?.duration_days || 1} days duration</span>
+            </div>
+          </div>
         </div>
+
+        {/* Live Video Meeting Action */}
+        {appointment.google_meet_link && appointment.status === 'booked' && (
+          <div className="flex-shrink-0">
+            <a
+              href={appointment.google_meet_link}
+              target="_blank"
+              rel="noreferrer"
+              className="px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white text-xs font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(56,189,248,0.35)] transition-all animate-pulse"
+            >
+              <Video className="w-4 h-4" />
+              <span>Join Live Video Call</span>
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Patient's Reported Symptoms (Full Text) */}
+      <div className="glass-panel p-6 rounded-2xl border border-cyan-500/40 bg-[#0d051e] space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-purple-950">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-cyan-950 border border-cyan-500/40 text-cyan-300">
+              <Activity className="w-4 h-4" />
+            </div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-white font-['Outfit']">
+              Patient's Reported Symptoms &amp; Medical Intake
+            </h3>
+          </div>
+          <span className="text-[11px] text-slate-400">Submitted during booking</span>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#070210] border border-purple-900/60 text-sm text-slate-100 leading-relaxed font-sans">
+          {symptoms?.raw_symptoms ? (
+            <p className="whitespace-pre-wrap">{symptoms.raw_symptoms}</p>
+          ) : (
+            <p className="text-slate-500 italic">No symptoms submitted for this visit.</p>
+          )}
+        </div>
+
+        {symptoms?.additional_notes && (
+          <div className="text-xs text-slate-400 bg-purple-950/20 p-2.5 rounded-lg border border-purple-900/30">
+            <strong className="text-purple-300">Patient's Additional Notes / Medical History: </strong>
+            <span>{symptoms.additional_notes}</span>
+          </div>
+        )}
       </div>
 
       {/* AI Pre-Visit Clinical Preparation Box */}
