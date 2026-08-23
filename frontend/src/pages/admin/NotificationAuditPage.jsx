@@ -93,7 +93,7 @@ export const NotificationAuditPage = () => {
         payload = {
           mail_server: 'https://api.resend.com',
           mail_port: 443,
-          mail_username: 'resend',
+          mail_username: 'onboarding@resend.dev',
           mail_password: resendApiKey.trim(),
           mail_from: 'onboarding@resend.dev',
           mail_ssl_tls: true,
