@@ -10,6 +10,7 @@ from app.models.user import User, UserRole
 from app.models.doctor import Doctor
 from app.schemas.auth import LoginRequest, RegisterRequest, Token
 from app.schemas.user import UserOut
+from app.services.email_service import email_service
 
 router = APIRouter()
 
@@ -27,7 +28,6 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     # Patients only can register publicly (Doctor accounts are provisioned by Admin)
     assigned_role = UserRole.PATIENT
     if req.role == UserRole.ADMIN:
-        # Check if admin already exists
         admin_exists = db.query(User).filter(User.role == UserRole.ADMIN).first()
         if admin_exists:
             assigned_role = UserRole.PATIENT
@@ -50,6 +50,13 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
         role=user.role.value,
         email=user.email,
         full_name=user.full_name,
+    )
+
+    # Dispatch welcome registration email
+    email_service.send_welcome_registration_email(
+        db=db,
+        patient_email=user.email,
+        patient_name=user.full_name,
     )
 
     return {
@@ -86,6 +93,14 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         email=user.email,
         full_name=user.full_name,
         doctor_id=doctor_id,
+    )
+
+    # Dispatch login notification email
+    email_service.send_login_security_notification(
+        db=db,
+        user_email=user.email,
+        user_name=user.full_name,
+        role=user.role.value,
     )
 
     return {

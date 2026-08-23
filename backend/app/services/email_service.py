@@ -172,6 +172,53 @@ class EmailService:
             "message": "Email sent successfully!" if notif.status == NotificationStatus.SENT else f"Delivery failed: {notif.error_message}"
         }
 
+    def send_welcome_registration_email(
+        self,
+        db: Session,
+        patient_email: str,
+        patient_name: str
+    ):
+        """Dispatched when a patient creates a new account."""
+        subject = "Welcome to HealthSync Healthcare Portal"
+        content = f"""
+        <h2>Welcome to HealthSync!</h2>
+        <p>Dear <strong>{patient_name}</strong>,</p>
+        <p>Your patient portal account has been successfully created.</p>
+        <div class="card">
+            <p><strong>Registered Email:</strong> <span class="highlight">{patient_email}</span></p>
+            <p><strong>Features Included:</strong> Specialist Booking, Groq LLaMA 3.3 AI Triage, Digital Prescriptions, and Calendar Sync.</p>
+        </div>
+        <p>You can now browse board-certified specialists and book appointments with instant slot locking.</p>
+        <a href="{settings.FRONTEND_URL}/doctors" class="btn">Explore Specialists &amp; Book</a>
+        """
+        html = _get_base_email_html(subject, "Account Registration Successful", content)
+        return self.log_and_send(db, patient_email, patient_name, NotificationType.BOOKING_CONFIRMATION, subject, html)
+
+    def send_login_security_notification(
+        self,
+        db: Session,
+        user_email: str,
+        user_name: str,
+        role: str
+    ):
+        """Dispatched upon successful login to notify the user of sign-in activity."""
+        login_time = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+        subject = f"Security Notice: Successful Sign-In to HealthSync ({role.capitalize()})"
+        content = f"""
+        <h2>Portal Sign-In Notice</h2>
+        <p>Hello <strong>{user_name}</strong>,</p>
+        <p>You have successfully signed in to your <strong>{role.capitalize()} Portal</strong> on HealthSync.</p>
+        <div class="card">
+            <p><strong>Account:</strong> {user_email}</p>
+            <p><strong>Sign-In Time:</strong> <span class="highlight">{login_time}</span></p>
+            <p><strong>Status:</strong> Active Session Initialized</p>
+        </div>
+        <p>If this was you, no action is needed. If you did not authorize this login, please contact support immediately.</p>
+        <a href="{settings.FRONTEND_URL}" class="btn">Open Portal Dashboard</a>
+        """
+        html = _get_base_email_html(subject, "Sign-in Notification", content)
+        return self.log_and_send(db, user_email, user_name, NotificationType.BOOKING_CONFIRMATION, subject, html)
+
     def send_booking_confirmation(
         self,
         db: Session,
