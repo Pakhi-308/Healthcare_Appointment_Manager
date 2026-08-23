@@ -35,7 +35,7 @@ export const NotificationAuditPage = () => {
   // SMTP Setup State
   const [showSmtpConfig, setShowSmtpConfig] = useState(false);
   const [smtpServer, setSmtpServer] = useState('smtp.gmail.com');
-  const [smtpPort, setSmtpPort] = useState(587);
+  const [smtpPort, setSmtpPort] = useState(465); // Port 465 SSL is default for cloud hosting
   const [smtpUsername, setSmtpUsername] = useState('');
   const [smtpPassword, setSmtpPassword] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
@@ -85,19 +85,22 @@ export const NotificationAuditPage = () => {
 
     setSavingSmtp(true);
     try {
+      const cleanPass = smtpPassword.replace(/\s+/g, '');
       const res = await api.post('/notifications/smtp-config', {
-        mail_server: smtpServer,
+        mail_server: smtpServer.trim(),
         mail_port: Number(smtpPort),
         mail_username: smtpUsername.trim(),
-        mail_password: smtpPassword.trim(),
+        mail_password: cleanPass,
         mail_from: smtpUsername.trim(),
-        mail_starttls: true,
+        mail_ssl_tls: Number(smtpPort) === 465,
+        mail_starttls: Number(smtpPort) !== 465,
       });
 
       if (res.data.success) {
-        toast.success('SMTP Connected & Authenticated Successfully! Real email sending is now ACTIVE.');
+        toast.success('SMTP Authenticated Successfully! Real email delivery is now ACTIVE.');
         setSmtpStatus(res.data);
         setShowSmtpConfig(false);
+        fetchData();
       } else {
         toast.error(res.data.message || 'SMTP Authentication failed. Check your App Password.');
       }
@@ -208,7 +211,7 @@ export const NotificationAuditPage = () => {
             <div className="font-bold text-purple-300">💡 30-Second Setup for Gmail:</div>
             <p>1. Go to your <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Google App Passwords page</a> (with 2-Step Verification ON).</p>
             <p>2. Generate an app password for <strong>HealthSync</strong> &rarr; Copy the 16-letter code.</p>
-            <p>3. Paste your Gmail and the 16-letter code below &rarr; Click <strong>Connect &amp; Authenticate</strong>.</p>
+            <p>3. Paste your Gmail and the 16-letter code below &rarr; Port <strong>465 (SSL)</strong> is recommended for cloud hosting.</p>
           </div>
 
           <form onSubmit={handleSaveSmtp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
@@ -224,13 +227,15 @@ export const NotificationAuditPage = () => {
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-slate-300 mb-1">Port</label>
-              <input
-                type="number"
+              <select
                 value={smtpPort}
-                onChange={(e) => setSmtpPort(e.target.value)}
+                onChange={(e) => setSmtpPort(Number(e.target.value))}
                 className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
-                required
-              />
+              >
+                <option value={465}>465 (SSL - Cloud Recommended)</option>
+                <option value={587}>587 (STARTTLS)</option>
+                <option value={2525}>2525 (Alternative)</option>
+              </select>
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-slate-300 mb-1">Sender Gmail Address</label>

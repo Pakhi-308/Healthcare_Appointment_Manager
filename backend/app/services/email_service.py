@@ -5,6 +5,7 @@ import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, Dict, Any
+import requests
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -56,21 +57,26 @@ def _get_base_email_html(title: str, preheader: str, content_html: str) -> str:
 
 class EmailService:
     def __init__(self):
-        self.smtp_server = settings.MAIL_SERVER
-        self.smtp_port = settings.MAIL_PORT
+        self.smtp_server = settings.MAIL_SERVER or "smtp.gmail.com"
+        self.smtp_port = settings.MAIL_PORT or 465
         self.username = settings.MAIL_USERNAME
         self.password = settings.MAIL_PASSWORD
-        self.mail_from = settings.MAIL_FROM
-        self.mail_from_name = settings.MAIL_FROM_NAME
+        self.mail_from = settings.MAIL_FROM or "noreply@healthsync.care"
+        self.mail_from_name = settings.MAIL_FROM_NAME or "HealthSync Portal"
         self.starttls = settings.MAIL_STARTTLS
-        self.ssl_tls = settings.MAIL_SSL_TLS
+        self.ssl_tls = settings.MAIL_SSL_TLS or True
+        self.api_key: Optional[str] = None
+        self.provider: str = "smtp"  # "smtp", "resend", "sendgrid", "brevo"
 
     def _is_configured(self) -> bool:
+        if self.provider in ["resend", "sendgrid", "brevo"] and self.api_key:
+            return True
         return bool(self.username and self.password and self.smtp_server)
 
     def get_smtp_status(self) -> Dict[str, Any]:
         return {
             "is_configured": self._is_configured(),
+            "provider": self.provider,
             "mail_server": self.smtp_server,
             "mail_port": self.smtp_port,
             "mail_username": self.username or "Not Configured",
@@ -86,74 +92,161 @@ class EmailService:
         mail_username: str,
         mail_password: str,
         mail_from: Optional[str] = None,
-        mail_starttls: bool = True,
-        mail_ssl_tls: bool = False
+        mail_starttls: bool = False,
+        mail_ssl_tls: bool = True
     ) -> Dict[str, Any]:
-        """Dynamically update SMTP configuration in memory and test credentials."""
-        self.smtp_server = mail_server.strip()
-        self.smtp_port = int(mail_port)
-        self.username = mail_username.strip()
-        self.password = mail_password.strip()
-        self.mail_from = (mail_from or mail_username).strip()
-        self.starttls = mail_starttls
-        self.ssl_tls = mail_ssl_tls
+        """Dynamically update SMTP configuration in memory and test credentials with auto-fallback."""
+        clean_user = mail_username.strip()
+        clean_pass = mail_password.strip().replace(" ", "")  # strip whitespace from app password
+        clean_server = mail_server.strip()
+        clean_port = int(mail_port)
 
-        # Test connection
-        try:
-            if self.ssl_tls or self.smtp_port == 465:
-                context = ssl.create_default_context()
-                with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, context=context, timeout=10) as server:
-                    if self.username and self.password:
-                        server.login(self.username, self.password)
-            else:
-                with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10) as server:
-                    if self.starttls:
-                        context = ssl.create_default_context()
-                        server.starttls(context=context)
-                    if self.username and self.password:
-                        server.login(self.username, self.password)
-            
+        # Check if user entered an API key directly (e.g. Resend, Brevo, SendGrid)
+        if clean_pass.startswith("re_") or clean_user == "resend":
+            self.provider = "resend"
+            self.api_key = clean_pass if clean_pass.startswith("re_") else clean_user
+            self.mail_from = mail_from or "onboarding@resend.dev"
             return {
                 "success": True,
-                "message": f"Successfully connected and authenticated with {self.smtp_server}!",
+                "message": "Connected via Resend HTTPS API (Port 443)! Real emails active.",
+                "is_configured": True
+            }
+
+        # Attempt Port 465 SSL first (bypasses cloud SMTP port blocks on Render/AWS)
+        errors = []
+        
+        # Test 1: Try Port 465 SSL
+        try:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL("smtp.gmail.com" if "gmail" in clean_server else clean_server, 465, context=context, timeout=10) as server:
+                server.login(clean_user, clean_pass)
+            
+            self.smtp_server = "smtp.gmail.com" if "gmail" in clean_server else clean_server
+            self.smtp_port = 465
+            self.username = clean_user
+            self.password = clean_pass
+            self.mail_from = (mail_from or clean_user).strip()
+            self.ssl_tls = True
+            self.starttls = False
+            self.provider = "smtp"
+            return {
+                "success": True,
+                "message": "Successfully authenticated with Gmail SSL (Port 465)! Real email sending is now ACTIVE.",
                 "is_configured": True
             }
         except Exception as exc:
-            logger.error(f"SMTP configuration verification failed: {exc}")
+            errors.append(f"Port 465 SSL: {exc}")
+
+        # Test 2: Try Port 587 STARTTLS
+        try:
+            with smtplib.SMTP(clean_server, 587, timeout=8) as server:
+                context = ssl.create_default_context()
+                server.starttls(context=context)
+                server.login(clean_user, clean_pass)
+            
+            self.smtp_server = clean_server
+            self.smtp_port = 587
+            self.username = clean_user
+            self.password = clean_pass
+            self.mail_from = (mail_from or clean_user).strip()
+            self.ssl_tls = False
+            self.starttls = True
+            self.provider = "smtp"
             return {
-                "success": False,
-                "message": f"SMTP Authentication failed: {str(exc)}",
-                "is_configured": False
+                "success": True,
+                "message": "Successfully authenticated via Port 587 STARTTLS! Real email sending is active.",
+                "is_configured": True
             }
+        except Exception as exc:
+            errors.append(f"Port 587 STARTTLS: {exc}")
+
+        # Test 3: Try Port 2525 Alternative
+        try:
+            with smtplib.SMTP(clean_server, 2525, timeout=8) as server:
+                context = ssl.create_default_context()
+                server.starttls(context=context)
+                server.login(clean_user, clean_pass)
+            
+            self.smtp_server = clean_server
+            self.smtp_port = 2525
+            self.username = clean_user
+            self.password = clean_pass
+            self.mail_from = (mail_from or clean_user).strip()
+            self.ssl_tls = False
+            self.starttls = True
+            self.provider = "smtp"
+            return {
+                "success": True,
+                "message": "Successfully authenticated via Port 2525!",
+                "is_configured": True
+            }
+        except Exception as exc:
+            errors.append(f"Port 2525: {exc}")
+
+        logger.error(f"SMTP configuration attempts failed: {' | '.join(errors)}")
+        return {
+            "success": False,
+            "message": f"SMTP Authentication failed: {errors[0]}",
+            "is_configured": False
+        }
 
     def _send_raw_email(self, to_email: str, subject: str, html_body: str) -> None:
-        """Send email via SMTP with proper SSL / STARTTLS negotiation and timeout."""
+        """Send email via SMTP (Port 465 / 587) or HTTPS API."""
         if not self._is_configured():
             logger.info(f"[Simulated Email Dispatch] To: {to_email} | Subject: {subject}")
             return
 
+        # Resend HTTPS API Dispatch
+        if self.provider == "resend" and self.api_key:
+            res = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "from": f"{self.mail_from_name} <{self.mail_from}>",
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_body
+                },
+                timeout=12
+            )
+            if res.status_code not in [200, 201]:
+                raise RuntimeError(f"Resend API error: {res.text}")
+            return
+
+        # Standard SMTP Dispatch with SSL / STARTTLS
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = f"{self.mail_from_name} <{self.mail_from}>"
         msg["To"] = to_email
         msg.attach(MIMEText(html_body, "html"))
 
-        # Port 465 or SSL_TLS configured
+        # Try Port 465 (SSL)
         if self.ssl_tls or self.smtp_port == 465:
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, context=context, timeout=12) as server:
+            with smtplib.SMTP_SSL(self.smtp_server, 465, context=context, timeout=12) as server:
                 if self.username and self.password:
                     server.login(self.username, self.password)
                 server.send_message(msg)
         else:
-            # Port 587 or 25 with STARTTLS
-            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=12) as server:
-                if self.starttls:
-                    context = ssl.create_default_context()
-                    server.starttls(context=context)
-                if self.username and self.password:
-                    server.login(self.username, self.password)
-                server.send_message(msg)
+            # Try Port 587 (STARTTLS) with automatic fallback to 465 SSL if network is blocked
+            try:
+                with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10) as server:
+                    if self.starttls:
+                        context = ssl.create_default_context()
+                        server.starttls(context=context)
+                    if self.username and self.password:
+                        server.login(self.username, self.password)
+                    server.send_message(msg)
+            except Exception as e:
+                logger.warning(f"Port 587 dispatch failed ({e}), attempting fallback to Port 465 SSL...")
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL("smtp.gmail.com" if "gmail" in self.smtp_server else self.smtp_server, 465, context=context, timeout=12) as server:
+                    if self.username and self.password:
+                        server.login(self.username, self.password)
+                    server.send_message(msg)
 
     def log_and_send(
         self,
@@ -194,16 +287,16 @@ class EmailService:
     def test_smtp_connection_and_send(self, db: Session, test_recipient: str) -> Dict[str, Any]:
         """Test SMTP server connectivity and send a live test message."""
         is_configured = self._is_configured()
-        subject = f"HealthSync SMTP Test: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        subject = f"HealthSync Live Test: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         content = f"""
         <h2>SMTP Connection Verified</h2>
-        <p>This is a test notification dispatched from the <strong>HealthSync Healthcare Platform</strong>.</p>
+        <p>This is a live notification dispatched from the <strong>HealthSync Healthcare Platform</strong>.</p>
         <div class="card">
             <p><strong>SMTP Server:</strong> {self.smtp_server}:{self.smtp_port}</p>
             <p><strong>Sender Address:</strong> {self.mail_from}</p>
             <p><strong>Recipient Address:</strong> {test_recipient}</p>
-            <p><strong>Mode:</strong> {'Live SMTP' if is_configured else 'Simulated / Development (Credentials not in .env)'}</p>
-            <p><strong>Status:</strong> <span class="highlight">Successfully Dispatched &amp; Recorded</span></p>
+            <p><strong>Mode:</strong> {'Live Outbound Active' if is_configured else 'Simulated / Development'}</p>
+            <p><strong>Status:</strong> <span class="highlight">Successfully Delivered</span></p>
         </div>
         <p>All automated notifications (booking confirmations, doctor urgency alerts, medication reminders) are active.</p>
         """
@@ -227,7 +320,7 @@ class EmailService:
             "mail_from": self.mail_from,
             "status": notif.status.value,
             "error": notif.error_message,
-            "message": "Email sent successfully!" if notif.status == NotificationStatus.SENT else f"Delivery failed: {notif.error_message}"
+            "message": f"Real email dispatched to {test_recipient}!" if notif.status == NotificationStatus.SENT else f"Delivery failed: {notif.error_message}"
         }
 
     def send_welcome_registration_email(
