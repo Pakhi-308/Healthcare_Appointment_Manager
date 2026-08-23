@@ -25,3 +25,19 @@ class NotificationStats(BaseModel):
     total_pending: int
     total_failed: int
     total_retried: int
+
+
+class TestEmailRequest(BaseModel):
+    recipient_email: EmailStr
+
+
+class TestEmailResponse(BaseModel):
+    success: bool
+    notification_id: Optional[int] = None
+    is_configured: bool
+    smtp_server: str
+    smtp_port: int
+    mail_from: str
+    status: str
+    error: Optional[str] = None
+    message: str

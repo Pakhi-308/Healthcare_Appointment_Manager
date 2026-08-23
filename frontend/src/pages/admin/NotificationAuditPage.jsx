@@ -12,7 +12,11 @@ import {
   Send, 
   Filter, 
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  X,
+  Sparkles,
+  Server
 } from 'lucide-react';
 
 export const NotificationAuditPage = () => {
@@ -22,6 +26,12 @@ export const NotificationAuditPage = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [retryingId, setRetryingId] = useState(null);
+  const [previewNotif, setPreviewNotif] = useState(null);
+
+  // Test Email State
+  const [testEmail, setTestEmail] = useState('admin@healthsync.care');
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -59,6 +69,31 @@ export const NotificationAuditPage = () => {
     }
   };
 
+  const handleSendTestEmail = async (e) => {
+    e.preventDefault();
+    if (!testEmail || !testEmail.includes('@')) {
+      toast.error('Please enter a valid recipient email.');
+      return;
+    }
+
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await api.post('/notifications/test-email', { recipient_email: testEmail });
+      setTestResult(res.data);
+      if (res.data.success) {
+        toast.success('Live SMTP Test Email Dispatched Successfully!');
+      } else {
+        toast.warning(res.data.message || 'Dispatched in development simulation mode.');
+      }
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'SMTP test failed.');
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header */}
@@ -69,20 +104,76 @@ export const NotificationAuditPage = () => {
             <span>Delivery &amp; Retry Orchestration</span>
           </div>
           <h1 className="text-3xl font-bold text-white font-['Outfit']">
-            Notification Audit &amp; Queue
+            Notification Audit &amp; SMTP Diagnostics
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Monitored by APScheduler background workers with exponential backoff retry
+            Monitored by APScheduler background workers with automatic exponential backoff retries.
           </p>
         </div>
 
         <button
           onClick={fetchData}
-          className="px-4 py-2 rounded-xl bg-purple-950/40 border border-purple-800/60 hover:bg-purple-900/50 text-purple-200 text-xs font-semibold flex items-center gap-2 self-start"
+          disabled={loading}
+          className="px-4 py-2 rounded-xl bg-purple-950/40 border border-purple-800/60 hover:bg-purple-900/50 text-purple-200 text-xs font-semibold flex items-center gap-2 self-start transition-all"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Audit Log</span>
         </button>
+      </div>
+
+      {/* Live SMTP Test Dispatcher Panel */}
+      <div className="glass-panel p-6 rounded-2xl border border-purple-500/30 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-950 border border-purple-500/40 flex items-center justify-center text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+              <Server className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white font-heading">Live SMTP Verification &amp; Email Dispatcher</h3>
+              <p className="text-xs text-slate-400">Trigger a real formatted HTML test email to verify SMTP credentials or view simulation payload.</p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSendTestEmail} className="flex flex-wrap items-center gap-3 pt-2">
+          <input
+            type="email"
+            value={testEmail}
+            onChange={(e) => setTestEmail(e.target.value)}
+            placeholder="target.email@example.com"
+            className="flex-1 min-w-[280px] bg-[#07020d] border border-purple-800/60 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 font-mono"
+            required
+          />
+          <button
+            type="submit"
+            disabled={sendingTest}
+            className="gradient-btn px-5 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 disabled:opacity-50 shadow-md"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>{sendingTest ? 'Testing SMTP...' : 'Dispatch Live Test Email'}</span>
+          </button>
+        </form>
+
+        {testResult && (
+          <div className={`p-4 rounded-xl text-xs border ${
+            testResult.success 
+              ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200' 
+              : 'bg-purple-950/40 border-purple-600/40 text-purple-200'
+          }`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold font-mono">
+                {testResult.is_configured ? 'Live SMTP Connection' : 'Simulated / Development Dispatch'}
+              </span>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-black/40">
+                Status: {testResult.status}
+              </span>
+            </div>
+            <p className="text-slate-300 mt-1">{testResult.message}</p>
+            <div className="mt-2 text-[11px] text-slate-400 font-mono">
+              Server: {testResult.smtp_server}:{testResult.smtp_port} | From: {testResult.mail_from}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Overview Stat Cards */}
@@ -151,14 +242,14 @@ export const NotificationAuditPage = () => {
                   <th className="px-6 py-4">Subject</th>
                   <th className="px-6 py-4">Status &amp; Retries</th>
                   <th className="px-6 py-4">Logged At</th>
-                  <th className="px-6 py-4 text-right">Action</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-purple-950/60 text-slate-300">
                 {notifications.map((notif) => {
-                  const isSent = notif.status === 'sent';
-                  const isPending = notif.status === 'pending';
-                  const isFailed = notif.status === 'failed';
+                  const isSent = notif.status === 'SENT' || notif.status === 'sent';
+                  const isPending = notif.status === 'PENDING' || notif.status === 'pending';
+                  const isFailed = notif.status === 'FAILED' || notif.status === 'failed';
 
                   return (
                     <tr key={notif.id} className="hover:bg-purple-950/20 transition-colors">
@@ -193,16 +284,27 @@ export const NotificationAuditPage = () => {
                         {new Date(notif.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {(isFailed || isPending) && (
+                        <div className="flex items-center justify-end gap-2">
                           <button
-                            disabled={retryingId === notif.id}
-                            onClick={() => handleManualRetry(notif.id)}
-                            className="px-3 py-1 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-200 hover:bg-amber-900/60 text-xs font-semibold flex items-center gap-1.5 ml-auto disabled:opacity-50"
+                            onClick={() => setPreviewNotif(notif)}
+                            className="px-2.5 py-1 rounded-lg bg-purple-900/40 border border-purple-700/50 text-purple-300 hover:text-white hover:bg-purple-800/60 text-xs font-semibold flex items-center gap-1 transition-colors"
+                            title="View HTML Email"
                           >
-                            <RotateCw className={`w-3 h-3 ${retryingId === notif.id ? 'animate-spin' : ''}`} />
-                            <span>Retry Now</span>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Preview</span>
                           </button>
-                        )}
+                          
+                          {(isFailed || isPending) && (
+                            <button
+                              disabled={retryingId === notif.id}
+                              onClick={() => handleManualRetry(notif.id)}
+                              className="px-3 py-1 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-200 hover:bg-amber-900/60 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              <RotateCw className={`w-3 h-3 ${retryingId === notif.id ? 'animate-spin' : ''}`} />
+                              <span>Retry</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -212,6 +314,62 @@ export const NotificationAuditPage = () => {
           </div>
         )}
       </div>
+
+      {/* HTML Email Modal Viewer */}
+      {previewNotif && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="bg-[#12072b] border border-purple-700/50 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-purple-950 via-[#1c0a42] to-indigo-950 border-b border-purple-800/40 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] uppercase tracking-wider text-purple-300 font-semibold">
+                  Rendered Email Preview
+                </span>
+                <h3 className="text-sm font-bold text-white line-clamp-1">{previewNotif.subject}</h3>
+              </div>
+              <button
+                onClick={() => setPreviewNotif(null)}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Email Meta Bar */}
+            <div className="px-5 py-2.5 bg-[#090312] border-b border-purple-900/30 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-slate-500">Recipient:</span> <strong className="text-purple-200">{previewNotif.recipient_name}</strong> ({previewNotif.recipient_email})
+              </div>
+              <div>
+                <span className="text-slate-500">Logged:</span> {new Date(previewNotif.created_at).toLocaleString()}
+              </div>
+            </div>
+
+            {/* Rendered HTML Email Content */}
+            <div className="flex-1 overflow-y-auto p-4 bg-[#090312]">
+              <div 
+                className="bg-transparent rounded-xl overflow-hidden"
+                dangerouslySetInnerHTML={{ __html: previewNotif.body }}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-[#100624] border-t border-purple-900/40 flex items-center justify-between">
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                previewNotif.status === 'SENT' || previewNotif.status === 'sent' ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/30' : 'bg-rose-950 text-rose-300'
+              }`}>
+                Delivery Status: {previewNotif.status}
+              </span>
+              <button
+                onClick={() => setPreviewNotif(null)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-purple-900/50 hover:bg-purple-800 text-white transition-colors"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

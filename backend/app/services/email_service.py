@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, Dict, Any
@@ -61,14 +62,16 @@ class EmailService:
         self.password = settings.MAIL_PASSWORD
         self.mail_from = settings.MAIL_FROM
         self.mail_from_name = settings.MAIL_FROM_NAME
+        self.starttls = settings.MAIL_STARTTLS
+        self.ssl_tls = settings.MAIL_SSL_TLS
 
     def _is_configured(self) -> bool:
         return bool(self.username and self.password and self.smtp_server)
 
     def _send_raw_email(self, to_email: str, subject: str, html_body: str) -> None:
-        """Send email via SMTP with STARTTLS."""
+        """Send email via SMTP with proper SSL / STARTTLS negotiation and timeout."""
         if not self._is_configured():
-            logger.info(f"[Mock SMTP] Email would be sent to: {to_email} | Subject: {subject}")
+            logger.info(f"[Simulated Email Dispatch] To: {to_email} | Subject: {subject}")
             return
 
         msg = MIMEMultipart("alternative")
@@ -77,12 +80,22 @@ class EmailService:
         msg["To"] = to_email
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10) as server:
-            if settings.MAIL_STARTTLS:
-                server.starttls()
-            if self.username and self.password:
-                server.login(self.username, self.password)
-            server.send_message(msg)
+        # Port 465 or SSL_TLS configured
+        if self.ssl_tls or self.smtp_port == 465:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, context=context, timeout=12) as server:
+                if self.username and self.password:
+                    server.login(self.username, self.password)
+                server.send_message(msg)
+        else:
+            # Port 587 or 25 with STARTTLS
+            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=12) as server:
+                if self.starttls:
+                    context = ssl.create_default_context()
+                    server.starttls(context=context)
+                if self.username and self.password:
+                    server.login(self.username, self.password)
+                server.send_message(msg)
 
     def log_and_send(
         self,
@@ -119,6 +132,45 @@ class EmailService:
             db.commit()
 
         return notif
+
+    def test_smtp_connection_and_send(self, db: Session, test_recipient: str) -> Dict[str, Any]:
+        """Test SMTP server connectivity and send a live test message."""
+        is_configured = self._is_configured()
+        subject = f"HealthSync SMTP Test: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        content = f"""
+        <h2>SMTP Connection Verified</h2>
+        <p>This is a test notification dispatched from the <strong>HealthSync Healthcare Platform</strong>.</p>
+        <div class="card">
+            <p><strong>SMTP Server:</strong> {self.smtp_server}:{self.smtp_port}</p>
+            <p><strong>Sender Address:</strong> {self.mail_from}</p>
+            <p><strong>Recipient Address:</strong> {test_recipient}</p>
+            <p><strong>Mode:</strong> {'Live SMTP' if is_configured else 'Simulated / Development (Credentials not in .env)'}</p>
+            <p><strong>Status:</strong> <span class="highlight">Successfully Dispatched &amp; Recorded</span></p>
+        </div>
+        <p>All automated notifications (booking confirmations, doctor urgency alerts, medication reminders) are active.</p>
+        """
+        html = _get_base_email_html(subject, "SMTP Test Notification", content)
+        
+        notif = self.log_and_send(
+            db=db,
+            recipient_email=test_recipient,
+            recipient_name="Test Recipient",
+            notification_type=NotificationType.BOOKING_CONFIRMATION,
+            subject=subject,
+            html_body=html
+        )
+
+        return {
+            "success": notif.status == NotificationStatus.SENT,
+            "notification_id": notif.id,
+            "is_configured": is_configured,
+            "smtp_server": self.smtp_server,
+            "smtp_port": self.smtp_port,
+            "mail_from": self.mail_from,
+            "status": notif.status.value,
+            "error": notif.error_message,
+            "message": "Email sent successfully!" if notif.status == NotificationStatus.SENT else f"Delivery failed: {notif.error_message}"
+        }
 
     def send_booking_confirmation(
         self,

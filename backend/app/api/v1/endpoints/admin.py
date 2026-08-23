@@ -4,14 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.core.database import get_db
+from app.core.config import settings
+from app.core.database import get_db, engine
 from app.core.security import get_password_hash
 from app.core.dependencies import require_role
 from app.models.user import User, UserRole
 from app.models.doctor import Doctor, DoctorLeave
-from app.models.appointment import Appointment, AppointmentStatus
+from app.models.appointment import Appointment, AppointmentStatus, SlotHold
 from app.models.notification import Notification, NotificationStatus
-from app.models.clinical import VisitSummary
+from app.models.clinical import VisitSummary, SymptomForm, Prescription, MedicationReminder
+from app.models.google_token import GoogleToken
 from app.schemas.doctor import (
     DoctorCreate,
     DoctorUpdate,
@@ -173,4 +175,48 @@ def get_analytics(
         "notifications_sent": notifications_sent,
         "notifications_failed": notifications_failed,
         "ai_summaries_generated": ai_summaries_generated,
+    }
+
+
+@router.get("/database/stats")
+def get_database_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Return SQL database metadata, table row counts, and engine statistics."""
+    db_dialect = engine.dialect.name.upper()  # SQLITE, MYSQL, POSTGRESQL
+    
+    # Mask connection URL for security
+    raw_url = settings.DATABASE_URL
+    masked_url = raw_url
+    if "@" in raw_url:
+        prefix = raw_url.split("@")[0]
+        suffix = raw_url.split("@")[1]
+        protocol = prefix.split("://")[0]
+        masked_url = f"{protocol}://***:***@{suffix}"
+
+    tables = [
+        {"table_name": "users", "description": "User accounts & auth credentials", "row_count": db.query(User).count()},
+        {"table_name": "doctors", "description": "Doctor clinical profiles & fees", "row_count": db.query(Doctor).count()},
+        {"table_name": "doctor_leaves", "description": "Doctor leave days & blackout periods", "row_count": db.query(DoctorLeave).count()},
+        {"table_name": "appointments", "description": "Scheduled appointments & calendar links", "row_count": db.query(Appointment).count()},
+        {"table_name": "slot_holds", "description": "Temporary 10-min slot reservation locks", "row_count": db.query(SlotHold).count()},
+        {"table_name": "symptom_assessments", "description": "Patient intake symptom forms", "row_count": db.query(SymptomForm).count()},
+        {"table_name": "visit_summaries", "description": "AI pre/post triage summaries (LLaMA 3.3)", "row_count": db.query(VisitSummary).count()},
+        {"table_name": "prescriptions", "description": "Clinical diagnoses & medication Rx", "row_count": db.query(Prescription).count()},
+        {"table_name": "medication_reminders", "description": "Scheduled recurring patient dosage alerts", "row_count": db.query(MedicationReminder).count()},
+        {"table_name": "notifications", "description": "Email dispatch audit log & retry queue", "row_count": db.query(Notification).count()},
+        {"table_name": "google_tokens", "description": "Google Calendar OAuth 2.0 user tokens", "row_count": db.query(GoogleToken).count()},
+    ]
+
+    total_records = sum(t["row_count"] for t in tables)
+
+    return {
+        "engine_type": db_dialect,
+        "database_url_masked": masked_url,
+        "pool_size": getattr(engine.pool, "size", lambda: 1)(),
+        "total_tables": len(tables),
+        "total_records": total_records,
+        "tables": tables,
+        "status": "connected_healthy"
     }

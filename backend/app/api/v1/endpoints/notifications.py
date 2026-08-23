@@ -5,13 +5,29 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.core.database import get_db
-from app.core.dependencies import require_role
+from app.core.dependencies import get_current_user, require_role
 from app.models.user import User, UserRole
 from app.models.notification import Notification, NotificationStatus
-from app.schemas.notification import NotificationOut, NotificationStats
+from app.schemas.notification import (
+    NotificationOut,
+    NotificationStats,
+    TestEmailRequest,
+    TestEmailResponse,
+)
 from app.services.email_service import email_service
 
 router = APIRouter()
+
+
+@router.get("/my", response_model=List[NotificationOut])
+def get_my_notifications(
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retrieve notifications/emails sent to the authenticated user."""
+    query = db.query(Notification).filter(Notification.recipient_email == current_user.email.lower().strip())
+    return query.order_by(desc(Notification.created_at)).limit(limit).all()
 
 
 @router.get("/audit", response_model=List[NotificationOut])
@@ -46,6 +62,37 @@ def get_notification_stats(
         "total_failed": failed,
         "total_retried": retried,
     }
+
+
+@router.post("/test-email", response_model=TestEmailResponse)
+def test_send_email(
+    req: TestEmailRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Trigger a live test email and verify SMTP connectivity."""
+    result = email_service.test_smtp_connection_and_send(
+        db=db,
+        test_recipient=req.recipient_email.lower().strip()
+    )
+    return result
+
+
+@router.get("/{notification_id}", response_model=NotificationOut)
+def get_notification_by_id(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retrieve details for a single notification."""
+    notif = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+
+    if current_user.role != UserRole.ADMIN and notif.recipient_email.lower().strip() != current_user.email.lower().strip():
+        raise HTTPException(status_code=403, detail="Forbidden: You cannot view this notification.")
+
+    return notif
 
 
 @router.post("/retry/{notification_id}", response_model=NotificationOut)
