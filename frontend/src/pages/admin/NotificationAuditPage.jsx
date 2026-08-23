@@ -20,7 +20,8 @@ import {
   Settings,
   Key,
   ShieldCheck,
-  Check
+  Check,
+  Globe
 } from 'lucide-react';
 
 export const NotificationAuditPage = () => {
@@ -32,12 +33,14 @@ export const NotificationAuditPage = () => {
   const [retryingId, setRetryingId] = useState(null);
   const [previewNotif, setPreviewNotif] = useState(null);
 
-  // SMTP Setup State
+  // SMTP & API Setup State
   const [showSmtpConfig, setShowSmtpConfig] = useState(false);
+  const [activeProvider, setActiveProvider] = useState('gmail'); // 'gmail' or 'resend'
   const [smtpServer, setSmtpServer] = useState('smtp.gmail.com');
-  const [smtpPort, setSmtpPort] = useState(465); // Port 465 SSL is default for cloud hosting
+  const [smtpPort, setSmtpPort] = useState(465);
   const [smtpUsername, setSmtpUsername] = useState('');
   const [smtpPassword, setSmtpPassword] = useState('');
+  const [resendApiKey, setResendApiKey] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
   const [smtpStatus, setSmtpStatus] = useState(null);
 
@@ -78,34 +81,54 @@ export const NotificationAuditPage = () => {
 
   const handleSaveSmtp = async (e) => {
     e.preventDefault();
-    if (!smtpUsername || !smtpPassword) {
-      toast.warning('Please enter your sender Gmail and 16-digit App Password.');
-      return;
-    }
-
     setSavingSmtp(true);
     try {
-      const cleanPass = smtpPassword.replace(/\s+/g, '');
-      const res = await api.post('/notifications/smtp-config', {
-        mail_server: smtpServer.trim(),
-        mail_port: Number(smtpPort),
-        mail_username: smtpUsername.trim(),
-        mail_password: cleanPass,
-        mail_from: smtpUsername.trim(),
-        mail_ssl_tls: Number(smtpPort) === 465,
-        mail_starttls: Number(smtpPort) !== 465,
-      });
+      let payload;
+      if (activeProvider === 'resend') {
+        if (!resendApiKey.trim()) {
+          toast.warning('Please enter your Resend API Key (starts with re_).');
+          setSavingSmtp(false);
+          return;
+        }
+        payload = {
+          mail_server: 'https://api.resend.com',
+          mail_port: 443,
+          mail_username: 'resend',
+          mail_password: resendApiKey.trim(),
+          mail_from: 'onboarding@resend.dev',
+          mail_ssl_tls: true,
+          mail_starttls: false,
+        };
+      } else {
+        if (!smtpUsername || !smtpPassword) {
+          toast.warning('Please enter your sender Gmail and 16-digit App Password.');
+          setSavingSmtp(false);
+          return;
+        }
+        const cleanPass = smtpPassword.replace(/\s+/g, '');
+        payload = {
+          mail_server: smtpServer.trim(),
+          mail_port: Number(smtpPort),
+          mail_username: smtpUsername.trim(),
+          mail_password: cleanPass,
+          mail_from: smtpUsername.trim(),
+          mail_ssl_tls: Number(smtpPort) === 465,
+          mail_starttls: Number(smtpPort) !== 465,
+        };
+      }
+
+      const res = await api.post('/notifications/smtp-config', payload);
 
       if (res.data.success) {
-        toast.success('SMTP Authenticated Successfully! Real email delivery is now ACTIVE.');
+        toast.success('Email Transport Connected! Real email delivery is now ACTIVE.');
         setSmtpStatus(res.data);
         setShowSmtpConfig(false);
         fetchData();
       } else {
-        toast.error(res.data.message || 'SMTP Authentication failed. Check your App Password.');
+        toast.error(res.data.message || 'Authentication failed. Check your credentials.');
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to connect to SMTP server.');
+      toast.error(err.response?.data?.detail || 'Failed to connect to mail server.');
     } finally {
       setSavingSmtp(false);
     }
@@ -159,7 +182,7 @@ export const NotificationAuditPage = () => {
             <span>Delivery &amp; Retry Orchestration</span>
           </div>
           <h1 className="text-3xl font-bold text-white font-['Outfit']">
-            Notification Audit &amp; SMTP Hub
+            Notification Audit &amp; Outbound Email Hub
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             Connect live email sending, test real inboxes, and inspect delivery logs
@@ -172,7 +195,7 @@ export const NotificationAuditPage = () => {
             className="px-4 py-2 rounded-xl bg-cyan-950/50 border border-cyan-500/40 hover:bg-cyan-900/60 text-cyan-200 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
           >
             <Settings className="w-3.5 h-3.5" />
-            <span>{showSmtpConfig ? 'Hide SMTP Setup' : 'Configure SMTP Sender'}</span>
+            <span>{showSmtpConfig ? 'Hide Mail Setup' : 'Configure Outbound Mail'}</span>
           </button>
 
           <button
@@ -186,7 +209,7 @@ export const NotificationAuditPage = () => {
         </div>
       </div>
 
-      {/* SMTP Configuration Card */}
+      {/* Outbound Mail Setup Modal / Card */}
       {showSmtpConfig && (
         <div className="glass-panel p-6 rounded-2xl border border-cyan-500/40 space-y-4">
           <div className="flex items-start justify-between">
@@ -195,88 +218,149 @@ export const NotificationAuditPage = () => {
                 <Key className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white font-heading">Connect Live Outbound Gmail / SMTP</h3>
-                <p className="text-xs text-slate-400">Enter your Gmail credentials to enable REAL email delivery directly to users' inboxes.</p>
+                <h3 className="text-base font-bold text-white font-heading">Connect Real Outbound Email Sender</h3>
+                <p className="text-xs text-slate-400">Choose your preferred provider for sending real emails directly to inboxes.</p>
               </div>
             </div>
             <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
               smtpStatus?.is_configured ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/30' : 'bg-amber-950 text-amber-300 border border-amber-600/30'
             }`}>
-              {smtpStatus?.is_configured ? '● Live SMTP Active' : '○ Simulation Mode'}
+              {smtpStatus?.is_configured ? '● Live Email Active' : '○ Simulation Mode'}
             </span>
           </div>
 
-          {/* Quick Guide */}
-          <div className="p-3.5 rounded-xl bg-[#0a0417] border border-purple-900/50 text-xs text-slate-300 space-y-1">
-            <div className="font-bold text-purple-300">💡 30-Second Setup for Gmail:</div>
-            <p>1. Go to your <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Google App Passwords page</a> (with 2-Step Verification ON).</p>
-            <p>2. Generate an app password for <strong>HealthSync</strong> &rarr; Copy the 16-letter code.</p>
-            <p>3. Paste your Gmail and the 16-letter code below &rarr; Port <strong>465 (SSL)</strong> is recommended for cloud hosting.</p>
+          {/* Provider Tabs */}
+          <div className="flex gap-2 border-b border-purple-950 pb-3">
+            <button
+              type="button"
+              onClick={() => setActiveProvider('gmail')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                activeProvider === 'gmail'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'bg-purple-950/40 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Gmail SMTP (SSL Port 465)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveProvider('resend')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                activeProvider === 'resend'
+                  ? 'bg-cyan-600 text-white shadow-md'
+                  : 'bg-purple-950/40 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Resend HTTPS API (Port 443 - Cloud Safe)</span>
+            </button>
           </div>
 
-          <form onSubmit={handleSaveSmtp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+          {activeProvider === 'gmail' ? (
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1">SMTP Server</label>
-              <input
-                type="text"
-                value={smtpServer}
-                onChange={(e) => setSmtpServer(e.target.value)}
-                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
-                required
-              />
+              {/* Quick Guide */}
+              <div className="p-3.5 rounded-xl bg-[#0a0417] border border-purple-900/50 text-xs text-slate-300 space-y-1 mb-3">
+                <div className="font-bold text-purple-300">💡 30-Second Setup for Gmail:</div>
+                <p>1. Go to your <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Google App Passwords page</a> (with 2-Step Verification ON).</p>
+                <p>2. Generate an app password for <strong>HealthSync</strong> &rarr; Copy the 16-letter code.</p>
+                <p>3. Paste your Gmail and the 16-letter code below &rarr; Click <strong>Connect &amp; Authenticate</strong>.</p>
+              </div>
+
+              <form onSubmit={handleSaveSmtp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">SMTP Server</label>
+                  <input
+                    type="text"
+                    value={smtpServer}
+                    onChange={(e) => setSmtpServer(e.target.value)}
+                    className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Port</label>
+                  <select
+                    value={smtpPort}
+                    onChange={(e) => setSmtpPort(Number(e.target.value))}
+                    className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                  >
+                    <option value={465}>465 (SSL - Cloud Recommended)</option>
+                    <option value={587}>587 (STARTTLS)</option>
+                    <option value={2525}>2525 (Alternative)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Sender Gmail Address</label>
+                  <input
+                    type="email"
+                    value={smtpUsername}
+                    onChange={(e) => setSmtpUsername(e.target.value)}
+                    placeholder="your.email@gmail.com"
+                    className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">16-Digit App Password</label>
+                  <input
+                    type="password"
+                    value={smtpPassword}
+                    onChange={(e) => setSmtpPassword(e.target.value)}
+                    placeholder="xxxx xxxx xxxx xxxx"
+                    className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                    required
+                  />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowSmtpConfig(false)}
+                    className="px-4 py-2 rounded-xl bg-purple-950/40 text-slate-300 text-xs font-semibold hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingSmtp}
+                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{savingSmtp ? 'Connecting...' : 'Connect Gmail SMTP'}</span>
+                  </button>
+                </div>
+              </form>
             </div>
+          ) : (
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1">Port</label>
-              <select
-                value={smtpPort}
-                onChange={(e) => setSmtpPort(Number(e.target.value))}
-                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
-              >
-                <option value={465}>465 (SSL - Cloud Recommended)</option>
-                <option value={587}>587 (STARTTLS)</option>
-                <option value={2525}>2525 (Alternative)</option>
-              </select>
+              {/* Resend Guide */}
+              <div className="p-3.5 rounded-xl bg-[#0a0417] border border-cyan-900/50 text-xs text-slate-300 space-y-1 mb-3">
+                <div className="font-bold text-cyan-300">⚡ Free Resend API (Recommended for Cloud Hosts like Render):</div>
+                <p>1. Sign up free at <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Resend.com</a> (gives 3,000 free emails/mo).</p>
+                <p>2. Create an API Key &rarr; Copy the key (starts with <code className="text-purple-300 font-mono">re_</code>).</p>
+                <p>3. Paste below &rarr; Emails are sent over Port 443 HTTPS which is never blocked by cloud hosts.</p>
+              </div>
+
+              <form onSubmit={handleSaveSmtp} className="flex flex-wrap items-center gap-3">
+                <input
+                  type="password"
+                  value={resendApiKey}
+                  onChange={(e) => setResendApiKey(e.target.value)}
+                  placeholder="re_123456789abcdef..."
+                  className="flex-1 min-w-[280px] bg-[#080210] border border-cyan-900/60 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-cyan-400"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={savingSmtp}
+                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{savingSmtp ? 'Connecting...' : 'Connect Resend API'}</span>
+                </button>
+              </form>
             </div>
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1">Sender Gmail Address</label>
-              <input
-                type="email"
-                value={smtpUsername}
-                onChange={(e) => setSmtpUsername(e.target.value)}
-                placeholder="your.email@gmail.com"
-                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1">16-Digit App Password</label>
-              <input
-                type="password"
-                value={smtpPassword}
-                onChange={(e) => setSmtpPassword(e.target.value)}
-                placeholder="xxxx xxxx xxxx xxxx"
-                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
-                required
-              />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setShowSmtpConfig(false)}
-                className="px-4 py-2 rounded-xl bg-purple-950/40 text-slate-300 text-xs font-semibold hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={savingSmtp}
-                className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>{savingSmtp ? 'Connecting & Verifying...' : 'Connect & Authenticate SMTP'}</span>
-              </button>
-            </div>
-          </form>
+          )}
         </div>
       )}
 
@@ -321,7 +405,7 @@ export const NotificationAuditPage = () => {
           }`}>
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold font-mono">
-                {testResult.is_configured ? 'Live SMTP Connection' : 'In-App Simulation Dispatch'}
+                {testResult.is_configured ? 'Live Outbound Connection' : 'In-App Simulation Dispatch'}
               </span>
               <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-black/40">
                 Status: {testResult.status}
@@ -329,7 +413,7 @@ export const NotificationAuditPage = () => {
             </div>
             <p className="text-slate-300 mt-1">{testResult.message}</p>
             <div className="mt-2 text-[11px] text-slate-400 font-mono">
-              Server: {testResult.smtp_server}:{testResult.smtp_port} | From: {testResult.mail_from}
+              Transport: {testResult.smtp_server} | From: {testResult.mail_from}
             </div>
           </div>
         )}
