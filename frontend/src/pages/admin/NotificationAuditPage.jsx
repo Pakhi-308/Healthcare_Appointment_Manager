@@ -21,7 +21,8 @@ import {
   Key,
   ShieldCheck,
   Check,
-  Globe
+  Globe,
+  Zap
 } from 'lucide-react';
 
 export const NotificationAuditPage = () => {
@@ -33,14 +34,23 @@ export const NotificationAuditPage = () => {
   const [retryingId, setRetryingId] = useState(null);
   const [previewNotif, setPreviewNotif] = useState(null);
 
-  // SMTP & API Setup State
+  // Setup State
   const [showSmtpConfig, setShowSmtpConfig] = useState(false);
-  const [activeProvider, setActiveProvider] = useState('gmail'); // 'gmail' or 'resend'
+  const [activeProvider, setActiveProvider] = useState('brevo'); // 'brevo', 'resend', 'gmail'
+  
+  // Gmail SMTP State
   const [smtpServer, setSmtpServer] = useState('smtp.gmail.com');
   const [smtpPort, setSmtpPort] = useState(465);
   const [smtpUsername, setSmtpUsername] = useState('');
   const [smtpPassword, setSmtpPassword] = useState('');
+
+  // Brevo State (Free - sends to ANY email in the world)
+  const [brevoApiKey, setBrevoApiKey] = useState('');
+  const [brevoSenderEmail, setBrevoSenderEmail] = useState('pakhishukla308@gmail.com');
+
+  // Resend State
   const [resendApiKey, setResendApiKey] = useState('');
+
   const [savingSmtp, setSavingSmtp] = useState(false);
   const [smtpStatus, setSmtpStatus] = useState(null);
 
@@ -66,6 +76,7 @@ export const NotificationAuditPage = () => {
         setSmtpStatus(smtpRes.data);
         if (smtpRes.data.mail_username && smtpRes.data.mail_username !== 'Not Configured') {
           setSmtpUsername(smtpRes.data.mail_username);
+          setBrevoSenderEmail(smtpRes.data.mail_username);
         }
       }
     } catch (err) {
@@ -84,7 +95,22 @@ export const NotificationAuditPage = () => {
     setSavingSmtp(true);
     try {
       let payload;
-      if (activeProvider === 'resend') {
+      if (activeProvider === 'brevo') {
+        if (!brevoApiKey.trim()) {
+          toast.warning('Please enter your Brevo API Key (starts with xkeysib-).');
+          setSavingSmtp(false);
+          return;
+        }
+        payload = {
+          mail_server: 'https://api.brevo.com',
+          mail_port: 443,
+          mail_username: brevoSenderEmail.trim(),
+          mail_password: brevoApiKey.trim(),
+          mail_from: brevoSenderEmail.trim(),
+          mail_ssl_tls: true,
+          mail_starttls: false,
+        };
+      } else if (activeProvider === 'resend') {
         if (!resendApiKey.trim()) {
           toast.warning('Please enter your Resend API Key (starts with re_).');
           setSavingSmtp(false);
@@ -120,7 +146,7 @@ export const NotificationAuditPage = () => {
       const res = await api.post('/notifications/smtp-config', payload);
 
       if (res.data.success) {
-        toast.success('Email Transport Connected! Real email delivery is now ACTIVE.');
+        toast.success('Email Service Connected! Delivery to all patients is now ACTIVE.');
         setSmtpStatus(res.data);
         setShowSmtpConfig(false);
         fetchData();
@@ -166,7 +192,7 @@ export const NotificationAuditPage = () => {
       }
       fetchData();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'SMTP test failed.');
+      toast.error(err.response?.data?.detail || 'Email dispatch failed.');
     } finally {
       setSendingTest(false);
     }
@@ -185,7 +211,7 @@ export const NotificationAuditPage = () => {
             Notification Audit &amp; Outbound Email Hub
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Connect live email sending, test real inboxes, and inspect delivery logs
+            Send real emails to ANY registered patient, test real inboxes, and inspect delivery logs
           </p>
         </div>
 
@@ -219,7 +245,7 @@ export const NotificationAuditPage = () => {
               </div>
               <div>
                 <h3 className="text-base font-bold text-white font-heading">Connect Real Outbound Email Sender</h3>
-                <p className="text-xs text-slate-400">Choose your preferred provider for sending real emails directly to inboxes.</p>
+                <p className="text-xs text-slate-400">Choose a provider to deliver real emails to all patients upon booking and registration.</p>
               </div>
             </div>
             <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
@@ -230,7 +256,31 @@ export const NotificationAuditPage = () => {
           </div>
 
           {/* Provider Tabs */}
-          <div className="flex gap-2 border-b border-purple-950 pb-3">
+          <div className="flex flex-wrap gap-2 border-b border-purple-950 pb-3">
+            <button
+              type="button"
+              onClick={() => setActiveProvider('brevo')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                activeProvider === 'brevo'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'bg-purple-950/40 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Brevo API (Free • Sends to ANY Email ID)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveProvider('resend')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                activeProvider === 'resend'
+                  ? 'bg-cyan-600 text-white shadow-md'
+                  : 'bg-purple-950/40 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Resend API (Sandbox Mode)</span>
+            </button>
             <button
               type="button"
               onClick={() => setActiveProvider('gmail')}
@@ -243,28 +293,98 @@ export const NotificationAuditPage = () => {
               <Mail className="w-3.5 h-3.5" />
               <span>Gmail SMTP (SSL Port 465)</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveProvider('resend')}
-              className={`px-4 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                activeProvider === 'resend'
-                  ? 'bg-cyan-600 text-white shadow-md'
-                  : 'bg-purple-950/40 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Resend HTTPS API (Port 443 - Cloud Safe)</span>
-            </button>
           </div>
 
-          {activeProvider === 'gmail' ? (
+          {/* BREVO TAB (Free & Sends to ANY email) */}
+          {activeProvider === 'brevo' && (
             <div>
-              {/* Quick Guide */}
+              <div className="p-3.5 rounded-xl bg-[#0a0417] border border-emerald-900/50 text-xs text-slate-300 space-y-1 mb-3">
+                <div className="font-bold text-emerald-300">🌟 Recommended: Brevo (Sendinblue) — Free 300 Emails/Day to ANY Patient Email:</div>
+                <p>1. Sign up free at <a href="https://app.brevo.com/account/login" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold">Brevo.com</a>.</p>
+                <p>2. Go to <strong>SMTP &amp; API Keys</strong> &rarr; Click <strong>Generate a new API key</strong> &rarr; Copy key (starts with <code className="text-emerald-300 font-mono">xkeysib-</code>).</p>
+                <p>3. Paste below &rarr; Allows sending to ANY recipient email in the world without domain verification!</p>
+              </div>
+
+              <form onSubmit={handleSaveSmtp} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Your Brevo Account Email</label>
+                  <input
+                    type="email"
+                    value={brevoSenderEmail}
+                    onChange={(e) => setBrevoSenderEmail(e.target.value)}
+                    placeholder="your.email@gmail.com"
+                    className="w-full bg-[#080210] border border-emerald-900/60 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:border-emerald-400"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Brevo API Key (xkeysib-...)</label>
+                  <input
+                    type="password"
+                    value={brevoApiKey}
+                    onChange={(e) => setBrevoApiKey(e.target.value)}
+                    placeholder="xkeysib-xxxxxxxxxxxx..."
+                    className="w-full bg-[#080210] border border-emerald-900/60 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:border-emerald-400"
+                    required
+                  />
+                </div>
+                <div className="sm:col-span-2 flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowSmtpConfig(false)}
+                    className="px-4 py-2 rounded-xl bg-purple-950/40 text-slate-300 text-xs font-semibold hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingSmtp}
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{savingSmtp ? 'Connecting...' : 'Connect Brevo API'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* RESEND TAB */}
+          {activeProvider === 'resend' && (
+            <div>
+              <div className="p-3.5 rounded-xl bg-[#0a0417] border border-cyan-900/50 text-xs text-slate-300 space-y-1 mb-3">
+                <div className="font-bold text-cyan-300">⚡ Resend Developer Sandbox:</div>
+                <p>• Note: Resend's free test domain (<code className="text-cyan-300 font-mono">onboarding@resend.dev</code>) delivers only to your Resend account email for testing.</p>
+                <p>• To send to all external patient emails with Resend, add a domain in Resend &rarr; Domains.</p>
+              </div>
+
+              <form onSubmit={handleSaveSmtp} className="flex flex-wrap items-center gap-3">
+                <input
+                  type="password"
+                  value={resendApiKey}
+                  onChange={(e) => setResendApiKey(e.target.value)}
+                  placeholder="re_123456789abcdef..."
+                  className="flex-1 min-w-[280px] bg-[#080210] border border-cyan-900/60 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-cyan-400"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={savingSmtp}
+                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{savingSmtp ? 'Connecting...' : 'Connect Resend API'}</span>
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* GMAIL TAB */}
+          {activeProvider === 'gmail' && (
+            <div>
               <div className="p-3.5 rounded-xl bg-[#0a0417] border border-purple-900/50 text-xs text-slate-300 space-y-1 mb-3">
-                <div className="font-bold text-purple-300">💡 30-Second Setup for Gmail:</div>
-                <p>1. Go to your <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Google App Passwords page</a> (with 2-Step Verification ON).</p>
-                <p>2. Generate an app password for <strong>HealthSync</strong> &rarr; Copy the 16-letter code.</p>
-                <p>3. Paste your Gmail and the 16-letter code below &rarr; Click <strong>Connect &amp; Authenticate</strong>.</p>
+                <div className="font-bold text-purple-300">💡 Gmail App Password:</div>
+                <p>Generate a 16-letter code at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Google App Passwords</a> and connect below.</p>
               </div>
 
               <form onSubmit={handleSaveSmtp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -287,11 +407,10 @@ export const NotificationAuditPage = () => {
                   >
                     <option value={465}>465 (SSL - Cloud Recommended)</option>
                     <option value={587}>587 (STARTTLS)</option>
-                    <option value={2525}>2525 (Alternative)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Sender Gmail Address</label>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Sender Gmail</label>
                   <input
                     type="email"
                     value={smtpUsername}
@@ -331,35 +450,6 @@ export const NotificationAuditPage = () => {
                 </div>
               </form>
             </div>
-          ) : (
-            <div>
-              {/* Resend Guide */}
-              <div className="p-3.5 rounded-xl bg-[#0a0417] border border-cyan-900/50 text-xs text-slate-300 space-y-1 mb-3">
-                <div className="font-bold text-cyan-300">⚡ Free Resend API (Recommended for Cloud Hosts like Render):</div>
-                <p>1. Sign up free at <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Resend.com</a> (gives 3,000 free emails/mo).</p>
-                <p>2. Create an API Key &rarr; Copy the key (starts with <code className="text-purple-300 font-mono">re_</code>).</p>
-                <p>3. Paste below &rarr; Emails are sent over Port 443 HTTPS which is never blocked by cloud hosts.</p>
-              </div>
-
-              <form onSubmit={handleSaveSmtp} className="flex flex-wrap items-center gap-3">
-                <input
-                  type="password"
-                  value={resendApiKey}
-                  onChange={(e) => setResendApiKey(e.target.value)}
-                  placeholder="re_123456789abcdef..."
-                  className="flex-1 min-w-[280px] bg-[#080210] border border-cyan-900/60 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-cyan-400"
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={savingSmtp}
-                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>{savingSmtp ? 'Connecting...' : 'Connect Resend API'}</span>
-                </button>
-              </form>
-            </div>
           )}
         </div>
       )}
@@ -373,7 +463,7 @@ export const NotificationAuditPage = () => {
             </div>
             <div>
               <h3 className="text-base font-bold text-white font-heading">Test Real Email Dispatch</h3>
-              <p className="text-xs text-slate-400">Type any email address (e.g., your personal Gmail) to send a live test message immediately.</p>
+              <p className="text-xs text-slate-400">Type any email address (e.g., your personal Gmail or college email) to send a live test message immediately.</p>
             </div>
           </div>
         </div>
@@ -383,7 +473,7 @@ export const NotificationAuditPage = () => {
             type="email"
             value={testEmail}
             onChange={(e) => setTestEmail(e.target.value)}
-            placeholder="Enter your personal email (e.g., yourname@gmail.com)..."
+            placeholder="Enter any recipient email (e.g., student@vitbhopal.ac.in)..."
             className="flex-1 min-w-[280px] bg-[#07020d] border border-purple-800/60 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 font-mono"
             required
           />
@@ -405,7 +495,7 @@ export const NotificationAuditPage = () => {
           }`}>
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold font-mono">
-                {testResult.is_configured ? 'Live Outbound Connection' : 'In-App Simulation Dispatch'}
+                {testResult.is_configured ? 'Live Outbound Delivery' : 'In-App Simulation Dispatch'}
               </span>
               <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-black/40">
                 Status: {testResult.status}
