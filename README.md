@@ -2,25 +2,30 @@
 
 An enterprise-grade, full-stack Healthcare Appointment & Follow-up Management web application built with **FastAPI**, **MySQL / SQLAlchemy**, **React (Vite) + Tailwind CSS**, **Groq LLaMA 3.3 70B AI**, **Google Calendar OAuth 2.0**, and **APScheduler**.
 
-Designed with a deep purple luxury showroom aesthetic (`#1a0a3e` obsidian/violet palette) featuring high-contrast readability, glassmorphism, and responsive micro-animations.
+Designed with an obsidian & deep purple glassmorphism showroom aesthetic featuring high-contrast readability, interactive LLaMA clinical triage, 10-minute temporary slot hold locks, and automated email notifications.
+
+---
+
+## 🌐 Live Production Deployments
+
+- **Frontend SPA (Vercel):** [https://healthcare-appointment-manager-eta.vercel.app](https://healthcare-appointment-manager-eta.vercel.app)
+- **Backend REST API (Render):** [https://healthsync-backend-r4k0.onrender.com](https://healthsync-backend-r4k0.onrender.com)
+- **Interactive Swagger Documentation:** [https://healthsync-backend-r4k0.onrender.com/docs](https://healthsync-backend-r4k0.onrender.com/docs)
+- **GitHub Repository:** [https://github.com/Pakhi-308/Healthcare_Appointment_Manager](https://github.com/Pakhi-308/Healthcare_Appointment_Manager)
 
 ---
 
 ## 1. Tech Stack & Architecture
 
-- **Frontend:** React 19 (Vite) + Tailwind CSS + Lucide Icons + Axios
+- **Frontend:** React 19 (Vite) + Vanilla CSS & Tailwind Design Tokens + Lucide Icons + Axios
 - **Backend:** Python 3.11+, FastAPI, Pydantic V2, Uvicorn
-- **Database:** MySQL / SQLite (SQLAlchemy 2.0 ORM + Alembic Migrations)
-- **Authentication:** JWT-based RBAC (`patient`, `doctor`, `admin`)
-- **LLM Engine:** Groq API (**LLaMA 3.3 70B** — `llama-3.3-70b-versatile`) with guaranteed offline/fallback degradation
-- **Email Service:** Python native `smtplib` / `fastapi-mail`
-- **Calendar Integration:** Google Calendar API v3 with OAuth 2.0
+- **Database:** MySQL / SQLite (SQLAlchemy 2.0 ORM + Alembic Migrations + Connection Pooling)
+- **Authentication:** JWT-based RBAC (`patient`, `doctor`, `admin`) + 1-Click Guest Mode
+- **LLM Engine:** Groq API (**LLaMA 3.3 70B** — `llama-3.3-70b-versatile`) with offline fallback
+- **Email Service:** Cloud-safe Resend HTTPS API (Port 443) + In-App Notification Hub & HTML Viewer
+- **Calendar Integration:** Google Calendar API v3 with OAuth 2.0 & Google Meet links
 - **Background Scheduler:** APScheduler (medication reminders, failed email retries with exponential backoff, expired hold cleanup)
-- **Deployment:** Render (Backend API) + Vercel (Frontend SPA) / Railway
-
-### Architecture Justification: Email Service
-> **Why Python `smtplib`/`fastapi-mail` instead of a Node.js microservice?**
-> A Python-native asynchronous email worker eliminates the operational complexity, network latency, and memory overhead of maintaining a separate Node.js runtime. Email dispatches are recorded in the database `notifications` audit queue and processed asynchronously without blocking user-facing requests.
+- **Deployment:** Render (Backend API) + Vercel (Frontend SPA)
 
 ---
 
@@ -29,11 +34,10 @@ Designed with a deep purple luxury showroom aesthetic (`#1a0a3e` obsidian/violet
 ### Prerequisites
 - **Node.js** v18+ and **npm** v9+
 - **Python** 3.10+ (Python 3.11/3.12/3.13 supported)
-- **MySQL** 8.0+ (or SQLite fallback for zero-config local testing)
 
 ### Step 1: Clone Repository
 ```bash
-git clone https://github.com/<your-username>/Healthcare_Appointment_Manager.git
+git clone https://github.com/Pakhi-308/Healthcare_Appointment_Manager.git
 cd Healthcare_Appointment_Manager
 ```
 
