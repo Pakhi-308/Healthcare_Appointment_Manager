@@ -13,6 +13,8 @@ from app.schemas.notification import (
     NotificationStats,
     TestEmailRequest,
     TestEmailResponse,
+    SMTPConfigIn,
+    SMTPConfigOut,
 )
 from app.services.email_service import email_service
 
@@ -61,6 +63,40 @@ def get_notification_stats(
         "total_pending": pending,
         "total_failed": failed,
         "total_retried": retried,
+    }
+
+
+@router.get("/smtp-status")
+def get_smtp_status(
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Admin endpoint to check current SMTP configuration."""
+    return email_service.get_smtp_status()
+
+
+@router.post("/smtp-config", response_model=SMTPConfigOut)
+def configure_smtp_runtime(
+    req: SMTPConfigIn,
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Admin endpoint to dynamically connect & authenticate custom SMTP sender credentials."""
+    result = email_service.update_smtp_config(
+        mail_server=req.mail_server,
+        mail_port=req.mail_port,
+        mail_username=req.mail_username,
+        mail_password=req.mail_password,
+        mail_from=req.mail_from or req.mail_username,
+        mail_starttls=req.mail_starttls,
+        mail_ssl_tls=req.mail_ssl_tls,
+    )
+    return {
+        "success": result["success"],
+        "is_configured": result["is_configured"],
+        "mail_server": req.mail_server,
+        "mail_port": req.mail_port,
+        "mail_username": req.mail_username,
+        "mail_from": req.mail_from or req.mail_username,
+        "message": result["message"],
     }
 
 

@@ -41,3 +41,23 @@ class TestEmailResponse(BaseModel):
     status: str
     error: Optional[str] = None
     message: str
+
+
+class SMTPConfigIn(BaseModel):
+    mail_server: str = "smtp.gmail.com"
+    mail_port: int = 587
+    mail_username: EmailStr
+    mail_password: str
+    mail_from: Optional[EmailStr] = None
+    mail_starttls: bool = True
+    mail_ssl_tls: bool = False
+
+
+class SMTPConfigOut(BaseModel):
+    success: bool
+    is_configured: bool
+    mail_server: str
+    mail_port: int
+    mail_username: str
+    mail_from: str
+    message: str

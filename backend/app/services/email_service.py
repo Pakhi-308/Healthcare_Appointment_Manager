@@ -68,6 +68,64 @@ class EmailService:
     def _is_configured(self) -> bool:
         return bool(self.username and self.password and self.smtp_server)
 
+    def get_smtp_status(self) -> Dict[str, Any]:
+        return {
+            "is_configured": self._is_configured(),
+            "mail_server": self.smtp_server,
+            "mail_port": self.smtp_port,
+            "mail_username": self.username or "Not Configured",
+            "mail_from": self.mail_from or "noreply@healthsync.care",
+            "starttls": self.starttls,
+            "ssl_tls": self.ssl_tls,
+        }
+
+    def update_smtp_config(
+        self,
+        mail_server: str,
+        mail_port: int,
+        mail_username: str,
+        mail_password: str,
+        mail_from: Optional[str] = None,
+        mail_starttls: bool = True,
+        mail_ssl_tls: bool = False
+    ) -> Dict[str, Any]:
+        """Dynamically update SMTP configuration in memory and test credentials."""
+        self.smtp_server = mail_server.strip()
+        self.smtp_port = int(mail_port)
+        self.username = mail_username.strip()
+        self.password = mail_password.strip()
+        self.mail_from = (mail_from or mail_username).strip()
+        self.starttls = mail_starttls
+        self.ssl_tls = mail_ssl_tls
+
+        # Test connection
+        try:
+            if self.ssl_tls or self.smtp_port == 465:
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, context=context, timeout=10) as server:
+                    if self.username and self.password:
+                        server.login(self.username, self.password)
+            else:
+                with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10) as server:
+                    if self.starttls:
+                        context = ssl.create_default_context()
+                        server.starttls(context=context)
+                    if self.username and self.password:
+                        server.login(self.username, self.password)
+            
+            return {
+                "success": True,
+                "message": f"Successfully connected and authenticated with {self.smtp_server}!",
+                "is_configured": True
+            }
+        except Exception as exc:
+            logger.error(f"SMTP configuration verification failed: {exc}")
+            return {
+                "success": False,
+                "message": f"SMTP Authentication failed: {str(exc)}",
+                "is_configured": False
+            }
+
     def _send_raw_email(self, to_email: str, subject: str, html_body: str) -> None:
         """Send email via SMTP with proper SSL / STARTTLS negotiation and timeout."""
         if not self._is_configured():

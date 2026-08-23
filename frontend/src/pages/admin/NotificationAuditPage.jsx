@@ -16,7 +16,11 @@ import {
   Eye,
   X,
   Sparkles,
-  Server
+  Server,
+  Settings,
+  Key,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
 
 export const NotificationAuditPage = () => {
@@ -28,8 +32,17 @@ export const NotificationAuditPage = () => {
   const [retryingId, setRetryingId] = useState(null);
   const [previewNotif, setPreviewNotif] = useState(null);
 
+  // SMTP Setup State
+  const [showSmtpConfig, setShowSmtpConfig] = useState(false);
+  const [smtpServer, setSmtpServer] = useState('smtp.gmail.com');
+  const [smtpPort, setSmtpPort] = useState(587);
+  const [smtpUsername, setSmtpUsername] = useState('');
+  const [smtpPassword, setSmtpPassword] = useState('');
+  const [savingSmtp, setSavingSmtp] = useState(false);
+  const [smtpStatus, setSmtpStatus] = useState(null);
+
   // Test Email State
-  const [testEmail, setTestEmail] = useState('admin@healthsync.care');
+  const [testEmail, setTestEmail] = useState('');
   const [sendingTest, setSendingTest] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
@@ -39,12 +52,19 @@ export const NotificationAuditPage = () => {
       const params = {};
       if (filter) params.status_filter = filter;
 
-      const [logsRes, statsRes] = await Promise.all([
+      const [logsRes, statsRes, smtpRes] = await Promise.all([
         api.get('/notifications/audit', { params }),
         api.get('/notifications/stats'),
+        api.get('/notifications/smtp-status').catch(() => ({ data: null })),
       ]);
       setNotifications(logsRes.data);
       setStats(statsRes.data);
+      if (smtpRes?.data) {
+        setSmtpStatus(smtpRes.data);
+        if (smtpRes.data.mail_username && smtpRes.data.mail_username !== 'Not Configured') {
+          setSmtpUsername(smtpRes.data.mail_username);
+        }
+      }
     } catch (err) {
       toast.error('Failed to load notification audit records.');
     } finally {
@@ -55,6 +75,38 @@ export const NotificationAuditPage = () => {
   useEffect(() => {
     fetchData();
   }, [filter]);
+
+  const handleSaveSmtp = async (e) => {
+    e.preventDefault();
+    if (!smtpUsername || !smtpPassword) {
+      toast.warning('Please enter your sender Gmail and 16-digit App Password.');
+      return;
+    }
+
+    setSavingSmtp(true);
+    try {
+      const res = await api.post('/notifications/smtp-config', {
+        mail_server: smtpServer,
+        mail_port: Number(smtpPort),
+        mail_username: smtpUsername.trim(),
+        mail_password: smtpPassword.trim(),
+        mail_from: smtpUsername.trim(),
+        mail_starttls: true,
+      });
+
+      if (res.data.success) {
+        toast.success('SMTP Connected & Authenticated Successfully! Real email sending is now ACTIVE.');
+        setSmtpStatus(res.data);
+        setShowSmtpConfig(false);
+      } else {
+        toast.error(res.data.message || 'SMTP Authentication failed. Check your App Password.');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to connect to SMTP server.');
+    } finally {
+      setSavingSmtp(false);
+    }
+  };
 
   const handleManualRetry = async (id) => {
     setRetryingId(id);
@@ -79,10 +131,10 @@ export const NotificationAuditPage = () => {
     setSendingTest(true);
     setTestResult(null);
     try {
-      const res = await api.post('/notifications/test-email', { recipient_email: testEmail });
+      const res = await api.post('/notifications/test-email', { recipient_email: testEmail.trim() });
       setTestResult(res.data);
       if (res.data.success) {
-        toast.success('Live SMTP Test Email Dispatched Successfully!');
+        toast.success(`Real email sent to ${testEmail}! Check your inbox.`);
       } else {
         toast.warning(res.data.message || 'Dispatched in development simulation mode.');
       }
@@ -104,33 +156,135 @@ export const NotificationAuditPage = () => {
             <span>Delivery &amp; Retry Orchestration</span>
           </div>
           <h1 className="text-3xl font-bold text-white font-['Outfit']">
-            Notification Audit &amp; SMTP Diagnostics
+            Notification Audit &amp; SMTP Hub
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Monitored by APScheduler background workers with automatic exponential backoff retries.
+            Connect live email sending, test real inboxes, and inspect delivery logs
           </p>
         </div>
 
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="px-4 py-2 rounded-xl bg-purple-950/40 border border-purple-800/60 hover:bg-purple-900/50 text-purple-200 text-xs font-semibold flex items-center gap-2 self-start transition-all"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh Audit Log</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSmtpConfig(!showSmtpConfig)}
+            className="px-4 py-2 rounded-xl bg-cyan-950/50 border border-cyan-500/40 hover:bg-cyan-900/60 text-cyan-200 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>{showSmtpConfig ? 'Hide SMTP Setup' : 'Configure SMTP Sender'}</span>
+          </button>
+
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="px-4 py-2 rounded-xl bg-purple-950/40 border border-purple-800/60 hover:bg-purple-900/50 text-purple-200 text-xs font-semibold flex items-center gap-2 transition-all"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
-      {/* Live SMTP Test Dispatcher Panel */}
+      {/* SMTP Configuration Card */}
+      {showSmtpConfig && (
+        <div className="glass-panel p-6 rounded-2xl border border-cyan-500/40 space-y-4">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-950 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white font-heading">Connect Live Outbound Gmail / SMTP</h3>
+                <p className="text-xs text-slate-400">Enter your Gmail credentials to enable REAL email delivery directly to users' inboxes.</p>
+              </div>
+            </div>
+            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+              smtpStatus?.is_configured ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/30' : 'bg-amber-950 text-amber-300 border border-amber-600/30'
+            }`}>
+              {smtpStatus?.is_configured ? '● Live SMTP Active' : '○ Simulation Mode'}
+            </span>
+          </div>
+
+          {/* Quick Guide */}
+          <div className="p-3.5 rounded-xl bg-[#0a0417] border border-purple-900/50 text-xs text-slate-300 space-y-1">
+            <div className="font-bold text-purple-300">💡 30-Second Setup for Gmail:</div>
+            <p>1. Go to your <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">Google App Passwords page</a> (with 2-Step Verification ON).</p>
+            <p>2. Generate an app password for <strong>HealthSync</strong> &rarr; Copy the 16-letter code.</p>
+            <p>3. Paste your Gmail and the 16-letter code below &rarr; Click <strong>Connect &amp; Authenticate</strong>.</p>
+          </div>
+
+          <form onSubmit={handleSaveSmtp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">SMTP Server</label>
+              <input
+                type="text"
+                value={smtpServer}
+                onChange={(e) => setSmtpServer(e.target.value)}
+                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">Port</label>
+              <input
+                type="number"
+                value={smtpPort}
+                onChange={(e) => setSmtpPort(e.target.value)}
+                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">Sender Gmail Address</label>
+              <input
+                type="email"
+                value={smtpUsername}
+                onChange={(e) => setSmtpUsername(e.target.value)}
+                placeholder="your.email@gmail.com"
+                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">16-Digit App Password</label>
+              <input
+                type="password"
+                value={smtpPassword}
+                onChange={(e) => setSmtpPassword(e.target.value)}
+                placeholder="xxxx xxxx xxxx xxxx"
+                className="w-full bg-[#080210] border border-purple-900/60 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-cyan-400"
+                required
+              />
+            </div>
+            <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowSmtpConfig(false)}
+                className="px-4 py-2 rounded-xl bg-purple-950/40 text-slate-300 text-xs font-semibold hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingSmtp}
+                className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{savingSmtp ? 'Connecting & Verifying...' : 'Connect & Authenticate SMTP'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Live Test Dispatcher */}
       <div className="glass-panel p-6 rounded-2xl border border-purple-500/30 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-950 border border-purple-500/40 flex items-center justify-center text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
-              <Server className="w-5 h-5" />
+              <Send className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white font-heading">Live SMTP Verification &amp; Email Dispatcher</h3>
-              <p className="text-xs text-slate-400">Trigger a real formatted HTML test email to verify SMTP credentials or view simulation payload.</p>
+              <h3 className="text-base font-bold text-white font-heading">Test Real Email Dispatch</h3>
+              <p className="text-xs text-slate-400">Type any email address (e.g., your personal Gmail) to send a live test message immediately.</p>
             </div>
           </div>
         </div>
@@ -140,7 +294,7 @@ export const NotificationAuditPage = () => {
             type="email"
             value={testEmail}
             onChange={(e) => setTestEmail(e.target.value)}
-            placeholder="target.email@example.com"
+            placeholder="Enter your personal email (e.g., yourname@gmail.com)..."
             className="flex-1 min-w-[280px] bg-[#07020d] border border-purple-800/60 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 font-mono"
             required
           />
@@ -150,7 +304,7 @@ export const NotificationAuditPage = () => {
             className="gradient-btn px-5 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 disabled:opacity-50 shadow-md"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>{sendingTest ? 'Testing SMTP...' : 'Dispatch Live Test Email'}</span>
+            <span>{sendingTest ? 'Sending Email...' : 'Send Live Test Email'}</span>
           </button>
         </form>
 
@@ -162,7 +316,7 @@ export const NotificationAuditPage = () => {
           }`}>
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold font-mono">
-                {testResult.is_configured ? 'Live SMTP Connection' : 'Simulated / Development Dispatch'}
+                {testResult.is_configured ? 'Live SMTP Connection' : 'In-App Simulation Dispatch'}
               </span>
               <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-black/40">
                 Status: {testResult.status}
