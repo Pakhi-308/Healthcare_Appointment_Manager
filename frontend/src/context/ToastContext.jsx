@@ -3,12 +3,25 @@ import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react'
 
 const ToastContext = createContext(null);
 
+const formatMessage = (msg) => {
+  if (typeof msg === 'string') return msg;
+  if (!msg) return 'An event occurred.';
+  if (Array.isArray(msg)) {
+    return msg.map(item => typeof item === 'object' ? item.msg || JSON.stringify(item) : String(item)).join(', ');
+  }
+  if (typeof msg === 'object') {
+    return msg.msg || msg.message || msg.detail || JSON.stringify(msg);
+  }
+  return String(msg);
+};
+
 export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
 
   const addToast = useCallback((message, type = 'info', duration = 4500) => {
     const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
+    const cleanMessage = formatMessage(message);
+    setToasts((prev) => [...prev, { id, message: cleanMessage, type }]);
     if (duration > 0) {
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));

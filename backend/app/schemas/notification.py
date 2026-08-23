@@ -6,7 +6,7 @@ from app.models.notification import NotificationType, NotificationStatus
 
 class NotificationOut(BaseModel):
     id: int
-    recipient_email: EmailStr
+    recipient_email: str
     recipient_name: str
     notification_type: NotificationType
     subject: str
@@ -28,7 +28,7 @@ class NotificationStats(BaseModel):
 
 
 class TestEmailRequest(BaseModel):
-    recipient_email: EmailStr
+    recipient_email: str
 
 
 class TestEmailResponse(BaseModel):
@@ -45,12 +45,12 @@ class TestEmailResponse(BaseModel):
 
 class SMTPConfigIn(BaseModel):
     mail_server: str = "smtp.gmail.com"
-    mail_port: int = 587
-    mail_username: EmailStr
+    mail_port: int = 465
+    mail_username: str
     mail_password: str
-    mail_from: Optional[EmailStr] = None
-    mail_starttls: bool = True
-    mail_ssl_tls: bool = False
+    mail_from: Optional[str] = None
+    mail_starttls: bool = False
+    mail_ssl_tls: bool = True
 
 
 class SMTPConfigOut(BaseModel):
